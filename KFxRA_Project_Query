@@ -1,0 +1,158 @@
+-- DATA CHECKING --
+-- This includes checking duplicated and missing values --
+
+-- kf_final_transaction --
+SELECT
+  transaction_id,
+  date,
+  branch_id,
+  customer_name,
+  product_id,
+  price,
+  discount_percentage,
+  rating,
+  COUNT(*) AS row_count
+FROM `kimia_farma.kf_final_transaction`
+GROUP BY transaction_id, date, branch_id, customer_name, product_id, price, discount_percentage, rating
+HAVING COUNT(*) > 1
+ORDER BY row_count DESC;
+
+SELECT
+  COUNT(*) AS total_rows,
+  SUM(CASE WHEN transaction_id IS NULL THEN 1 ELSE 0 END) AS null_transaction_id,
+  SUM(CASE WHEN date IS NULL THEN 1 ELSE 0 END) AS null_date,
+  SUM(CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END) AS null_branch_id,
+  SUM(CASE WHEN customer_name IS NULL THEN 1 ELSE 0 END) AS null_customer_name,
+  SUM(CASE WHEN product_id IS NULL THEN 1 ELSE 0 END) AS null_product_id,
+  SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END) AS null_price,
+  SUM(CASE WHEN discount_percentage IS NULL THEN 1 ELSE 0 END) AS null_discount_percentage,
+  SUM(CASE WHEN rating IS NULL THEN 1 ELSE 0 END) AS null_rating
+FROM `kimia_farma.kf_final_transaction`;
+
+-- kf_inventory --
+SELECT
+  Inventory_ID,
+  branch_id,
+  product_id,
+  product_name,
+  opname_stock,
+  COUNT(*) AS row_count
+FROM `kimia_farma.kf_inventory`
+GROUP BY Inventory_ID, branch_id, product_id, product_name, opname_stock
+HAVING COUNT(*) > 1
+ORDER BY row_count DESC;
+
+SELECT
+  COUNT(*) AS total_rows,
+  SUM(CASE WHEN Inventory_ID IS NULL THEN 1 ELSE 0 END) AS null_count_Inventory_ID,
+  SUM(CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END) AS null_count_branch_id,
+  SUM(CASE WHEN product_id IS NULL THEN 1 ELSE 0 END) AS null_count_product_id,
+  SUM(CASE WHEN product_name IS NULL THEN 1 ELSE 0 END) AS null_count_product_name,
+  SUM(CASE WHEN opname_stock IS NULL THEN 1 ELSE 0 END) AS null_count_opname_stock
+FROM `kimia_farma.kf_inventory`;
+
+-- kf_kantor_cabang --
+SELECT
+  branch_id,
+  branch_category,
+  branch_name,
+  kota,
+  provinsi,
+  rating,
+  COUNT(*) AS row_count
+FROM `kimia_farma.kf_kantor_cabang`
+GROUP BY branch_id, branch_category, branch_name, kota, provinsi, rating
+HAVING COUNT(*) > 1
+ORDER BY row_count DESC;
+
+SELECT
+  COUNT(*) AS total_rows,
+  SUM(CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END) AS null_count_branch_id,
+  SUM(CASE WHEN branch_category IS NULL THEN 1 ELSE 0 END) AS null_count_branch_category,
+  SUM(CASE WHEN branch_name IS NULL THEN 1 ELSE 0 END) AS null_count_branch_name,
+  SUM(CASE WHEN kota IS NULL THEN 1 ELSE 0 END) AS null_count_product_kota,
+  SUM(CASE WHEN provinsi IS NULL THEN 1 ELSE 0 END) AS null_count_provinsi,
+  SUM(CASE WHEN rating IS NULL THEN 1 ELSE 0 END) AS null_count_rating
+FROM `kimia_farma.kf_kantor_cabang`;
+
+-- kf_product --
+SELECT
+  product_id,
+  product_name,
+  product_category,
+  price,
+  COUNT(*) AS row_count
+FROM `kimia_farma.kf_product`
+GROUP BY product_id, product_name, product_category, price
+HAVING COUNT(*) > 1
+ORDER BY row_count DESC;
+
+SELECT
+  COUNT(*) AS total_rows,
+  SUM(CASE WHEN product_id IS NULL THEN 1 ELSE 0 END) AS null_count_product_id,
+  SUM(CASE WHEN product_name IS NULL THEN 1 ELSE 0 END) AS null_count_product_name,
+  SUM(CASE WHEN product_category IS NULL THEN 1 ELSE 0 END) AS null_count_product_category,
+  SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END) AS null_count_price
+FROM `kimia_farma.kf_product`;
+
+
+-- CTE --
+
+CREATE TABLE `kimia_farma.kf_analysis` AS
+WITH
+  gross_laba AS(
+    SELECT DISTINCT
+      product_id,
+      CASE
+        WHEN price <= 50000 THEN 0.1
+        WHEN price BETWEEN 50000 AND 100000 THEN 0.15
+        WHEN price BETWEEN 100000 AND 300000 THEN 0.2
+        WHEN price BETWEEN 300000 AND 500000 THEN 0.25
+        WHEN price >= 500000 THEN 0.3
+      END AS persentase_gross_laba
+    FROM `kimia_farma.kf_final_transaction`
+  ),
+
+  kf_transaction AS(
+    SELECT
+      GL.*,
+      FORMAT_DATE('%m-%Y', date) AS month_year,
+      transaction_id,      
+      branch_id,
+      customer_name,
+      price AS actual_price,
+      discount_percentage,
+      rating AS rating_transaction
+    FROM `kimia_farma.kf_final_transaction` AS FT
+    JOIN gross_laba AS GL ON FT.product_id = GL.product_id
+  ),
+
+  kf_cabang AS(
+    SELECT
+      KFT.*,
+      KC.branch_name,
+      KC.branch_category,
+      KC.kota AS city,
+      KC.provinsi AS province,
+      KC.rating AS rating_cabang
+    FROM `kimia_farma.kf_kantor_cabang`AS KC
+    JOIN kf_transaction AS KFT ON KC.branch_id = KFT.branch_id
+  ),
+
+  kf_product AS (
+    SELECT
+      KFC.*,
+      P.product_name,
+      P.product_category
+    FROM `kimia_farma.kf_product`AS P
+    JOIN kf_cabang AS KFC ON P.product_id = KFC.product_id
+  )
+
+SELECT
+  *,
+  (actual_price - actual_price * discount_percentage) AS nett_sales,
+  ((actual_price - actual_price * discount_percentage) * persentase_gross_laba) AS nett_profit,
+FROM kf_product
+ORDER BY month_year ASC;
+
+SELECT * FROM `kimia_farma.kf_analysis`;
